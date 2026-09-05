@@ -315,7 +315,7 @@ async function handleRpc(body) {
   }
   return handleOne(body);
 }
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (!authorized(req)) return res.status(401).json({ error: 'Unauthorized' });

@@ -1,7 +1,7 @@
 {
   "name": "crues22-mcp",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MCP lecture seule — vigilance crues Côtes-d'Armor",
-  "type": "module"
+  "engines": { "node": "20.x" }
 }
