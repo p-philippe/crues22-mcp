@@ -319,25 +319,59 @@ async function handleRpc(body) {
   }
   return handleOne(body);
 }
-export function OPTIONS() {
-  return new Response(null, { status: 204, headers: corsHeaders() });
-}
-export function GET(request) {
-  if (!authorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders() });
-  return Response.json({
+function info() {
+  return {
     name: 'crues22-mcp', title: 'Crues 22 — MCP lecture seule', protocol: PROTOCOL,
     transport: 'streamable-http', lecture: 'seule', site: SITE,
     tools: TOOLS.map((t) => t.name), auth: process.env.MCP_TOKEN ? 'bearer' : 'none',
-  }, { headers: corsHeaders() });
+  };
 }
-export async function POST(request) {
-  if (!authorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders() });
+async function readBody(req) {
+  if (!req) return {};
+  if (typeof req.json === 'function') return await req.json().catch(() => ({}));
+  if (typeof req.body === 'string') {
+    try { return JSON.parse(req.body || '{}'); } catch { return {}; }
+  }
+  if (req.body && typeof req.body === 'object') return req.body;
+  return {};
+}
+function sendNode(res, status, body, headers) {
+  const h = headers || corsHeaders();
+  for (const [k, v] of Object.entries(h)) res.setHeader(k, v);
+  if (body == null || body === '') return res.status(status).end();
+  if (typeof body === 'string') return res.status(status).send(body);
+  return res.status(status).json(body);
+}
+export default async function handler(req, res) {
+  const method = (req.method || 'GET').toUpperCase();
+  if (method === 'OPTIONS') {
+    if (res && typeof res.status === 'function') return sendNode(res, 204, '', corsHeaders());
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
+  if (!authorized(req)) {
+    if (res && typeof res.status === 'function') return sendNode(res, 401, { error: 'Unauthorized' });
+    return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders() });
+  }
+  if (method === 'GET') {
+    if (res && typeof res.status === 'function') return sendNode(res, 200, info());
+    return Response.json(info(), { headers: corsHeaders() });
+  }
+  if (method !== 'POST') {
+    if (res && typeof res.status === 'function') return sendNode(res, 405, { error: 'Method not allowed' });
+    return Response.json({ error: 'Method not allowed' }, { status: 405, headers: corsHeaders() });
+  }
   try {
-    const body = await request.json().catch(() => ({}));
+    const body = await readBody(req);
     const out = await handleRpc(body);
-    if (out == null) return new Response(null, { status: 202, headers: corsHeaders() });
+    if (out == null) {
+      if (res && typeof res.status === 'function') return sendNode(res, 202, '');
+      return new Response(null, { status: 202, headers: corsHeaders() });
+    }
+    if (res && typeof res.status === 'function') return sendNode(res, 200, out);
     return Response.json(out, { headers: corsHeaders() });
   } catch (e) {
+    if (res && typeof res.status === 'function') return sendNode(res, 200, fail(null, -32603, e.message));
     return Response.json(fail(null, -32603, e.message), { headers: corsHeaders() });
   }
 }
+export { handler as GET, handler as POST, handler as OPTIONS };
