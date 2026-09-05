@@ -67,11 +67,13 @@ const TOOLS = [
   { name: 'get_vigicrues_flash_22', description: 'Vigicrues Flash communes 22 (JSON public carte). Source Vigicrues/DGPR.', inputSchema: { type: 'object', properties: { commune: { type: 'string' } } } },
 ];
 
-function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, MCP-Protocol-Version, Accept, Mcp-Session-Id');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, MCP-Protocol-Version, Accept, Mcp-Session-Id',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Content-Type': 'application/json; charset=utf-8',
+  };
 }
 function ok(id, result) { return { jsonrpc: '2.0', id: id ?? null, result }; }
 function fail(id, code, message) { return { jsonrpc: '2.0', id: id ?? null, error: { code, message } }; }
@@ -79,7 +81,9 @@ function text(obj) { return { content: [{ type: 'text', text: JSON.stringify(obj
 function authorized(req) {
   const token = process.env.MCP_TOKEN;
   if (!token) return true;
-  return (req.headers.authorization || '') === `Bearer ${token}`;
+  const h = req.headers;
+  const auth = typeof h.get === 'function' ? h.get('authorization') : h.authorization;
+  return (auth || '') === `Bearer ${token}`;
 }
 function officialLevel(raw) {
   const n = Number(raw);
@@ -315,24 +319,25 @@ async function handleRpc(body) {
   }
   return handleOne(body);
 }
-module.exports = async function handler(req, res) {
-  cors(res);
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (!authorized(req)) return res.status(401).json({ error: 'Unauthorized' });
-  if (req.method === 'GET') {
-    return res.status(200).json({
-      name: 'crues22-mcp', title: 'Crues 22 — MCP lecture seule', protocol: PROTOCOL,
-      transport: 'streamable-http', lecture: 'seule', site: SITE,
-      tools: TOOLS.map((t) => t.name), auth: process.env.MCP_TOKEN ? 'bearer' : 'none',
-    });
-  }
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+export function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() });
+}
+export function GET(request) {
+  if (!authorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders() });
+  return Response.json({
+    name: 'crues22-mcp', title: 'Crues 22 — MCP lecture seule', protocol: PROTOCOL,
+    transport: 'streamable-http', lecture: 'seule', site: SITE,
+    tools: TOOLS.map((t) => t.name), auth: process.env.MCP_TOKEN ? 'bearer' : 'none',
+  }, { headers: corsHeaders() });
+}
+export async function POST(request) {
+  if (!authorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders() });
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
+    const body = await request.json().catch(() => ({}));
     const out = await handleRpc(body);
-    if (out == null) return res.status(202).end();
-    return res.status(200).json(out);
+    if (out == null) return new Response(null, { status: 202, headers: corsHeaders() });
+    return Response.json(out, { headers: corsHeaders() });
   } catch (e) {
-    return res.status(200).json(fail(null, -32603, e.message));
+    return Response.json(fail(null, -32603, e.message), { headers: corsHeaders() });
   }
 }
